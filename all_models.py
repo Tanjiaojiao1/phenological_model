@@ -16,6 +16,7 @@ pd.options.display.max_columns = 999
 pd.options.display.max_rows = 999
 
 
+
 sun = Sun.Sun()
 
 def photo_effect_correct(today, jd, hd, photo):
