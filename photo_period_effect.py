@@ -40,7 +40,8 @@ def Test_photoeffect():
     '''
     plot(range(0, 24), [photoeffect_wofost(DL=DLm) for DLm in np.linspace(0, 24, 24)])
     show()
-
+def CERES_Rice(psr:float=100,DLc:float=12.5,DL:float=10):
+    return (1+psr/136*(DL-DLc))**-1
 if __name__ == '__main__':
     Test_photoeffect()
 
