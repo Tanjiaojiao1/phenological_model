@@ -15,7 +15,6 @@ os.chdir(os.path.dirname(os.path.realpath(__file__)))
 pd.options.display.max_columns = 999
 pd.options.display.max_rows = 999
 
-fjsakldk
 
 sun = Sun.Sun()
 
