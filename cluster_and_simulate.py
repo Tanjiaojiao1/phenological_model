@@ -3,7 +3,7 @@ import pandas as pd
 from pylab import *
 import os
 import seaborn as sns
-from photo_period_effect import photoeffect_yin, photoeffect_oryza2000, photoeffect_wofost
+from photo_period_effect import photoeffect_yin, photoeffect_oryza2000, CERES_Rice
 from T_dev_effect import Wang_engle, T_base_op_ceiling, T_base_opt
 import datetime
 from sklearn.cluster import KMeans
@@ -14,6 +14,7 @@ os.chdir(os.path.dirname(os.path.realpath(__file__)))
 
 pd.options.display.max_columns = 99999
 pd.options.display.max_rows = 99999
+
 def getweatherstat_TemAver_ATM(SID,trd):
     '''
     SID:station id
@@ -105,37 +106,38 @@ def cluster_and_sim():
                 for thermalfun, thermalfun_para in zip([Wang_engle, T_base_op_ceiling, T_base_opt],
                                                        [{"Tbase": 8, "Topt": 30, "Tcei": 42}, {"Tbase": 8,"Topt_low": 25,"Topt_high": 35,"Tcei": 42, },
                                                         {"Tbase": 8, "Topt": 30}]):
-                    for photofun, photofun_para in zip([photoeffect_yin, photoeffect_oryza2000, photoeffect_wofost, ""],
+                    for photofun, photofun_para in zip([photoeffect_yin, photoeffect_oryza2000, CERES_Rice, ""],
                                                        [{"mu": -15.46, "zeta": 2.06, "ep": 2.48},
-                                                        {"Dc": 12.5, 'PPSE': 0.2}, {"Dc": 16, "Do": 12.5}, ""]):
+                                                        {"Dc": 12.5, 'PPSE': 0.2}, {"psr": 100, "Do": 12.5}, ""]):
+                        for quantile in [0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50]:
+                            dfcm = simulate_and_calibrate(thermal_fun=thermalfun, thermal_fun_para=thermalfun_para,
+                                                        photofun=photofun, photo_fun_para=photofun_para, dfws=dfws, df=gp, quantile=quantile)
+                            print(thermalfun, photofun)
+                            dfcm['thermalfun'] = thermalfun.__name__
+                            if photofun == '':
+                                print('here')
+                                dfcm['photofun'] = ''
+                                dfcm['model'] = thermalfun.__name__
+                            else:
+                                dfcm['photofun'] = photofun.__name__
+                                dfcm['model'] = thermalfun.__name__ + '_' + photofun.__name__
+                            dfcm['n_cluster'] = n_cluster
+                            dfcm['cluster_vas'] = '_'.join(va)
+                            dfcm['claster_number'] = ind
+                            dfcm['quantiles'] = quantile
 
-                        dfcm = simulate_and_calibrate(thermal_fun=thermalfun, thermal_fun_para=thermalfun_para,
-                                                      photofun=photofun, photo_fun_para=photofun_para, dfws=dfws, df=gp)
-                        print(thermalfun, photofun)
-                        dfcm['thermalfun'] = thermalfun.__name__
-                        if photofun == '':
-                            print('here')
-                            dfcm['photofun'] = ''
-                            dfcm['model'] = thermalfun.__name__
-                        else:
-                            dfcm['photofun'] = photofun.__name__
-                            dfcm['model'] = thermalfun.__name__ + '_' + photofun.__name__
-                        dfcm['n_cluster'] = n_cluster
-                        dfcm['cluster_vas'] = '_'.join(va)
-                        dfcm['claster_number'] = ind
+                            dfcm.to_csv('../data/cluster_and_sim.csv', mode='a',
+                                        header=False if os.path.exists('../data/cluster_and_sim.csv') else True,
+                                        index=False)
+    df.to_excel('../data/dfm_cluster.xlsx', index=False)
 
-                        dfcm.to_csv('.../cluster_and_sim.csv', mode='a',
-                                    header=False if os.path.exists('.../cluster_and_sim.csv') else True,
-                                    index=False)
-
-    df.to_excel('.../dfm_cluster.xlsx', index=False)
 
 def cluster_and_sim_parallel():
-    df=pd.read_excel('.../dfm.xlsx')
-    wths=pd.read_csv('.../weather_all.csv')
-    if os.path.exists('.../cluster_and_sim.csv'):
-        os.remove('.../cluster_and_sim.csv')
-    pool=Pool(6)
+    df=pd.read_excel('../data/dfm.xlsx')
+    wths=pd.read_csv('../data/weather_all.csv')
+    if os.path.exists('../data/cluster_and_sim.csv'):
+        os.remove('../data/cluster_and_sim.csv')
+    pool=Pool(50)
     res=[]
     for va in [['lat'], ['STM'], ['lat','STM'],['lat', 'STM','alt'],['lat', 'STM', 'TDOY'],['lat', 'STM', 'TDOY', 'alt']]:
         print(va)
@@ -147,9 +149,28 @@ def cluster_and_sim_parallel():
             res.append(re)
     for re in res:
         dfcm=re.get()
-        dfcm.to_csv('.../cluster_and_sim.csv',mode='a',header=False if os.path.exists('../modified/cluster_and_sim.csv') else True,index=False)
+        dfcm.to_csv('../data/cluster_and_sim.csv',mode='a',header=False if os.path.exists('../data/cluster_and_sim.csv') else True,index=False)
 
-    df.to_excel('.../dfm_cluster.xlsx', index=False)
+    df.to_excel('../data/dfm_cluster.xlsx', index=False)
+
+
+def cluster_and_sim_sequence():
+    df=pd.read_excel('../data/dfm.xlsx')
+    wths=pd.read_csv('../data/weather_all.csv')
+    if os.path.exists('../data/cluster_and_sim.csv'):
+        os.remove('../data/cluster_and_sim.csv')
+
+    for va in [['lat'], ['STM'], ['lat','STM'],['lat', 'STM','alt'],['lat', 'STM', 'TDOY'],['lat', 'STM', 'TDOY', 'alt']]:
+        print(va)
+        for n_cluster in [1, 3, 6, 9, 12, 18, 24]:
+            kmeans=KMeans(n_clusters=n_cluster)
+            y = kmeans.fit_predict(df[va])
+            df['Cluster_%d_%s'%(n_cluster,'_'.join(va))]=y
+            dfcm=sim_cluster(df,wths,n_cluster,va)
+            dfcm.to_csv('../data/cluster_and_sim.csv',mode='a',header=False if os.path.exists('../data/cluster_and_sim.csv') else True,index=False)
+            break
+    df.to_excel('../data/dfm_cluster.xlsx', index=False)
+
 
 def sim_cluster(df,wths,n_cluster,va):
     dfall=pd.DataFrame()
@@ -158,23 +179,26 @@ def sim_cluster(df,wths,n_cluster,va):
         dfws=wths.merge(gp,on=['SID','year','season'])[['SID','year','season','Date','TemAver']]
         for thermalfun,thermalfun_para in zip([Wang_engle, T_base_op_ceiling, T_base_opt],[{"Tbase":8, "Topt":30, "Tcei":42},{"Tbase":8,
                                                                 "Topt_low":25, "Topt_high":35, "Tcei":42,},{"Tbase":8, "Topt":30}]):
-            for photofun,photofun_para in zip([photoeffect_yin, photoeffect_oryza2000, photoeffect_wofost,""],
-                                                [{"mu":-15.46, "zeta":2.06, "ep":2.48},{"Dc":12.5,'PPSE':0.2},{"Dc":16, "Do":12.5},""]):
+            for photofun,photofun_para in zip([photoeffect_yin, photoeffect_oryza2000, CERES_Rice,""],
+                                                [{"mu":-15.46, "zeta":2.06, "ep":2.48},{"Dc":12.5,'PPSE':0.2},{"psr":100, "Do":12.5},""]):
 
-                dfcm=simulate_and_calibrate(thermal_fun=thermalfun,thermal_fun_para=thermalfun_para,photofun=photofun,photo_fun_para=photofun_para,dfws=dfws,df=gp)
-                print(thermalfun,photofun)
-                dfcm['thermalfun']=thermalfun.__name__
-                if photofun=='':
-                    print('here')
-                    dfcm['photofun']=''
-                    dfcm['model']=thermalfun.__name__
-                else:
-                    dfcm['photofun']=photofun.__name__
-                    dfcm['model']=thermalfun.__name__+'_'+photofun.__name__
-                dfcm['n_cluster']=n_cluster
-                dfcm['cluster_vas']='_'.join(va)
-                dfcm['claster_number']=ind
-                dfall=pd.concat([dfall,dfcm])
+                for quantile in np.arange(0.05,0.51,0.05):
+                    dfcm = simulate_and_calibrate(thermal_fun=thermalfun, thermal_fun_para=thermalfun_para,
+                                                photofun=photofun, photo_fun_para=photofun_para, dfws=dfws, df=gp, quantile=quantile)
+                    print(thermalfun, photofun)
+                    dfcm['thermalfun'] = thermalfun.__name__
+                    if photofun == '':
+                        print('here')
+                        dfcm['photofun'] = ''
+                        dfcm['model'] = thermalfun.__name__
+                    else:
+                        dfcm['photofun'] = photofun.__name__
+                        dfcm['model'] = thermalfun.__name__ + '_' + photofun.__name__
+                    dfcm['n_cluster'] = n_cluster
+                    dfcm['cluster_vas'] = '_'.join(va)
+                    dfcm['claster_number'] = ind
+                    dfcm['quantiles'] = quantile
+                    dfall=pd.concat([dfall,dfcm])
     return dfall
 
 if __name__=="__main__":
