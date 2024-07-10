@@ -6,7 +6,7 @@ from pylab import *
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 import os
-from photo_period_effect import photoeffect_yin, photoeffect_oryza2000, photoeffect_wofost
+from photo_period_effect import photoeffect_yin, photoeffect_oryza2000, CERES_Rice
 from T_dev_effect import Wang_engle, T_base_op_ceiling, T_base_opt
 import datetime
 import Sun
@@ -24,7 +24,7 @@ def photo_effect_correct(today, jd, hd, photo):
     else:
         return photo
 
-def simulate_and_calibrate(thermal_fun,thermal_fun_para,photofun,photo_fun_para,dfws,df):
+def simulate_and_calibrate(thermal_fun,thermal_fun_para,photofun,photo_fun_para,dfws,df,quantile=0.50):
     dfmm = df[['SID', 'lat', 'lon', 'alt', 'year', 'season',
                'reviving date', 'tillering date', 'jointing date',
                'booting date', 'heading date', 'maturity date']].copy()
@@ -55,9 +55,24 @@ def simulate_and_calibrate(thermal_fun,thermal_fun_para,photofun,photo_fun_para,
         dfall = pd.concat([dfall, dfw])
     # print(dfall)
     thermaldf = dfall.merge(dfm, on=['SID', 'year', 'Date', 'season'], how='right')
+    # thermaldf.to_excel('../data/thermaldf.csv', index=False)
+
+    # 计算每个DStage的分位数
     dfp = thermaldf.groupby('DStage').median()['photothermal_cum'].reset_index()
+    mature_percentile_thermal=thermaldf.loc[thermaldf.DStage=='maturity date','photothermal_cum'].quantile(quantile)
+    dfp.loc[(dfp.DStage=='maturity date'),'photothermal_cum'] = mature_percentile_thermal
+    if mature_percentile_thermal<dfp.loc[(dfp.DStage=='heading date'),'photothermal_cum'].values[0]:
+        dfp.loc[(dfp.DStage=='heading date'),'photothermal_cum']=(mature_percentile_thermal+dfp.loc[(dfp.DStage=='booting date'),'photothermal_cum'].values[0])/2
+        if dfp.loc[(dfp.DStage=='heading date'),'photothermal_cum'].values[0]<dfp.loc[(dfp.DStage=='booting date'),'photothermal_cum'].values[0]:
+            dfp.loc[(dfp.DStage=='booting date'),'photothermal_cum']=(dfp.loc[(dfp.DStage=='heading date'),'photothermal_cum'].values[0]+dfp.loc[(dfp.DStage=='jointing date'),'photothermal_cum'].values[0])/2
+            if dfp.loc[(dfp.DStage=='booting date'),'photothermal_cum'].values[0]<dfp.loc[(dfp.DStage=='jointing date'),'photothermal_cum'].values[0]:
+                dfp.loc[(dfp.DStage=='jointing date'),'photothermal_cum']=(dfp.loc[(dfp.DStage=='booting date'),'photothermal_cum'].values[0]+dfp.loc[(dfp.DStage=='tillering date'),'photothermal_cum'].values[0])/2
+                if dfp.loc[(dfp.DStage=='jointing date'),'photothermal_cum'].values[0]<dfp.loc[(dfp.DStage=='reviving date'),'photothermal_cum'].values[0]:
+                    dfp.loc[(dfp.DStage=='reviving date'),'photothermal_cum']=1.0
+                    
+    dfp.loc[(dfp.DStage=='maturity date'),'photothermal_cum'] = mature_percentile_thermal
     dfp = dfp.sort_values(by=['photothermal_cum']).reset_index()
-    # print(dfp)
+
     mybins = dfp.photothermal_cum.tolist()
     mybins.append(9999999)
     mybins[0] = 0
@@ -67,16 +82,16 @@ def simulate_and_calibrate(thermal_fun,thermal_fun_para,photofun,photo_fun_para,
 
     dfpall = dfpall[['SID', 'year', 'season', 'Date', 'PhotoThermal_Dstage']].rename(
         columns={'PhotoThermal_Dstage': 'DStage', 'Date': 'sim_date'})
-
+    
     dff = dfm.merge(dfpall, on=['SID', 'year', 'season', 'DStage'], how='left').rename(columns={'Date':'ob_date'})
+    
     dff.loc[dff.DStage != 'reviving date', 'sim_date'] = dff.loc[dff.DStage != 'reviving date', 'sim_date'].apply(
         lambda x: x + datetime.timedelta(days=-1))
-    # print(dff)
+    
     dff['delta_days'] = (dff.sim_date-dff.ob_date).dt.days
 
-    # Find rows where 'delta_days' is null & DStage == 'maturity date'
+   # Find rows where 'delta_days' is null & DStage == 'maturity date'
     null_rows = dff.loc[(dff.DStage == 'maturity date') & dff.delta_days.isnull()]
-
     # Iterate over null rows and calculate delta_days between 'reviving_ob_date' + 124 days and 'maturity_ob_date'
     for ind, row in null_rows.iterrows():
         # print(ind, row)
@@ -86,17 +101,17 @@ def simulate_and_calibrate(thermal_fun,thermal_fun_para,photofun,photo_fun_para,
         # Find 'reviving date' and 'maturity date' ob_dates for the corresponding 'SID', 'year', 'season'
         reviving_ob_date = dff.loc[(dff.SID == sid) & (dff.year == year) & (dff.season == season)& (dff.DStage == 'reviving date')]['ob_date'].values[0]
         maturity_ob_date = dff.loc[(dff.SID == sid) & (dff.year == year) & (dff.season == season)& (dff.DStage == 'maturity date')]['ob_date'].values[0]
-
         # Calculate the difference in days between 'reviving_ob_date' + 124 days and 'maturity_ob_date'
         reviving_date_plus_124 = pd.to_datetime(reviving_ob_date) + datetime.timedelta(days=124)
         delta_days = (reviving_date_plus_124 - maturity_ob_date).days
-
         # Update 'abs_delta_days' in the 'dff' DataFrame
         dff.loc[ind, 'delta_days'] = delta_days
 
-    dff['abs_delta_days'] = dff['delta_days'].abs()
+    dff['abs_delta_days']=dff['delta_days'].abs()
 
     return dff
+
+
 
 
 
