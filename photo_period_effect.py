@@ -14,13 +14,6 @@ def photoeffect_yin(DL, mu, zeta, ep):
     max_photo=max([yin_photo(DL,mu,zeta,ep) for DL in np.linspace(1, 24, 100)])
     return photo/max_photo
 
-def photoeffect_wofost(DL,Dc,Do):
-    '''
-    Dc: the critical day length.
-    Do: the Optimum day length.
-    '''
-    return(min(max(0, ((DL-Dc)/(Do-Dc))), 1))
-
 
 def photoeffect_oryza2000(DL, Dc, PPSE):
     '''
