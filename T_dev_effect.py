@@ -25,7 +25,15 @@ def T_base_op_ceiling(T, Tbase, Topt_low,Topt_high, Tcei):
     Topt_high: the upper optimum temperature.
     Tcei: Upper threshold temperature for development
     '''
-    return np.interp(T,[Tbase,Topt_low,Topt_high,Tcei],[0,Topt_low-Tbase,Topt_low-Tbase,0])
+    if T < Tbase or T > Tcei:
+        return 0
+    elif T >= Tbase and T <= Topt_low:
+        return (T- Tbase)
+    elif T > Topt_low and T < Topt_high:
+        return (Topt_high - Topt_low)
+    else:  # This covers the case when T > Topt_high and T <= Tcei
+        return (T - Topt_high)
+
 
 def Wang_engle(T, Tbase, Topt, Tcei):
     '''
@@ -40,16 +48,3 @@ def Wang_engle(T, Tbase, Topt, Tcei):
         thermal = (2 * ((T - Tbase) ** alpha) * (Topt - Tbase) ** alpha - (T - Tbase) ** (2 * alpha)) / (
                 (Topt - Tbase) ** (2 * alpha))
         return thermal * (T - Tbase)
-
-if __name__ == '__main__':
-    '''
-    To test whether the functions are correct
-    '''
-    T_values = np.linspace(0, 40, 100)
-    result = T_base_opt(T_values, 8, 30)
-    plt.plot(T_values, result)
-    plt.xlabel('T')
-    plt.ylabel('T_base_opt')
-    plt.title('T_base_opt Function')
-    plt.grid(True)
-    plt.show()
